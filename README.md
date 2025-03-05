@@ -59,20 +59,6 @@ Skyy is an AI-powered compliment generator that uses computer vision and speech 
 4. Grant permission when asked
 5. Receive your personalized compliment!
 
-## Project Structure
-
-skyy_compliment/
-├── main.py                 # Main application entry
-│ ├── modules/
-│ │ ├── init.py
-│ │ ├── vision.py # Computer vision analysis
-│ │ ├── speech.py # Speech recognition and synthesis
-│ │ ├── nlp.py # Natural language processing
-│ │ └── permission.py # Permission handling
-│ ├── requirements.txt # Project dependencies
-│ └── README.md # Project documentation
-
-
 ## How It Works
 
 1. **Speech Recognition**: Continuously listens for the trigger phrase "Skyy, compliment me"
