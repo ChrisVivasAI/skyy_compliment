@@ -1,25 +1,25 @@
 import cv2
-import numpy as np
+# import numpy as np # No longer directly needed
 import os
+import ollama
+import base64
+import io
+import traceback
+# import re # No longer needed for parsing here
 
 # Force CPU usage and reduce memory consumption
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
+# Ensure Ollama library is available (should be from previous steps)
+
 class VisionAnalyzer:
-    def __init__(self):
-        print("Initializing VisionAnalyzer...", flush=True)
-        try:
-            self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-            if self.face_cascade.empty():
-                raise Exception("Error loading face cascade classifier")
-            self.camera = None
-            print("Face detection model loaded successfully", flush=True)
-            
-        except Exception as e:
-            print(f"Error during VisionAnalyzer initialization: {str(e)}", flush=True)
-            raise
-    
+    def __init__(self, model_name="gemma3:4b"):
+        """Initializes the VisionAnalyzer using a local multimodal Ollama model."""
+        self.model_name = model_name
+        self.camera = None
+        print(f"VisionAnalyzer initialized to use Ollama model: {self.model_name} for image description.", flush=True)
+
     def initialize_camera(self):
         """Initialize camera with error handling"""
         print("Initializing camera...", flush=True)
@@ -27,95 +27,86 @@ class VisionAnalyzer:
             self.camera = cv2.VideoCapture(0)
             if not self.camera.isOpened():
                 raise Exception("Could not access camera")
+            # Allow camera to warm up
+            for _ in range(5):
+                 self.camera.read()
             print("Camera initialized successfully", flush=True)
             return self.camera
         except Exception as e:
             print(f"Camera initialization error: {str(e)}", flush=True)
             raise
-    
+
+    def _encode_image_to_base64(self, frame):
+        """Encodes a cv2 frame (numpy array) into base64 string."""
+        try:
+            # Encode the frame to PNG format in memory
+            is_success, buffer = cv2.imencode(".png", frame)
+            if not is_success:
+                 raise ValueError("Could not encode image to PNG format")
+            # Convert buffer to bytes
+            image_bytes = buffer.tobytes()
+            # Encode bytes to base64 string
+            base64_string = base64.b64encode(image_bytes).decode('utf-8')
+            return base64_string
+        except Exception as e:
+            print(f"Error encoding image: {e}", flush=True)
+            return None
+
+    def _create_vision_prompt(self):
+        """Creates the prompt for the multimodal model to describe the person."""
+        # Changed prompt to ask for description instead of structured features
+        prompt = """Analyze the attached image of a person, likely a student. Provide a brief, objective description focusing on their general appearance, expression, and any notable clothing or items. Example: 'A student with short dark hair smiling slightly, wearing a blue hoodie and glasses.'"""
+        return prompt
+
     def capture_and_analyze(self):
-        """Capture image and extract visual features for compliment generation"""
+        """Capture image and get a description using the multimodal Ollama model."""
+        analysis_result = {"description": None, "error": None} # Standardized return format
         try:
-            # Initialize camera if not already done
-            if not self.camera:
+            if not self.camera or not self.camera.isOpened():
                 self.initialize_camera()
-            
-            # Capture frame
-            print("Capturing image...", flush=True)
+
+            print("Capturing image for description...", flush=True)
             ret, frame = self.camera.read()
-            if not ret:
-                raise Exception("Failed to capture image")
-            
-            # Analyze using multiple approaches
-            features = {}
-            
-            # Basic face detection
-            print("Detecting face...", flush=True)
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            faces = self.face_cascade.detectMultiScale(gray, 1.3, 5)
-            
-            if len(faces) > 0:
-                features["face_detected"] = True
-                x, y, w, h = faces[0]  # Use the first face detected
-                face_img = frame[y:y+h, x:x+w]
-                
-                # Simple smile detection using Haar cascade
-                smile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_smile.xml')
-                smiles = smile_cascade.detectMultiScale(gray[y:y+h, x:x+w], 1.7, 20)
-                features["emotion"] = "happy" if len(smiles) > 0 else "neutral"
-                
-                # Basic color analysis
-                try:
-                    non_face = frame.copy()
-                    cv2.rectangle(non_face, (x, y), (x+w, y+h), (0, 0, 0), -1)
-                    colors = self._analyze_colors(non_face)
-                    features["colors"] = colors
-                except Exception as e:
-                    print(f"Color analysis error: {str(e)}", flush=True)
-                    features["colors"] = []
+            if not ret or frame is None:
+                raise Exception("Failed to capture valid image frame")
+
+            base64_image = self._encode_image_to_base64(frame)
+            if not base64_image:
+                raise Exception("Failed to encode image")
+
+            prompt = self._create_vision_prompt()
+
+            print(f"Sending image and description prompt to Ollama model: {self.model_name}...", flush=True)
+            response = ollama.chat(
+                model=self.model_name,
+                messages=[
+                    {
+                        'role': 'user',
+                        'content': prompt,
+                        'images': [base64_image]
+                    }
+                ]
+            )
+
+            if response and 'message' in response and 'content' in response['message']:
+                description = response['message']['content'].strip()
+                print(f"Received description from Ollama:\n---\n{description}\n---", flush=True)
+                analysis_result["description"] = description
+                return analysis_result # Return description successfully
             else:
-                features["face_detected"] = False
-                print("No face detected in image", flush=True)
-            
-            return features
-            
+                 raise Exception("Invalid response format from Ollama (Vision)")
+
         except Exception as e:
-            print(f"Error during image capture and analysis: {str(e)}", flush=True)
-            return {"error": str(e)}
-    
-    def _analyze_colors(self, image):
-        """Extract dominant colors from image using a simpler approach"""
-        try:
-            # Reduce image size for faster processing
-            small = cv2.resize(image, (32, 32))
-            pixels = small.reshape(-1, 3)
-            
-            # Calculate average color
-            avg_color = np.mean(pixels, axis=0)
-            b, g, r = avg_color.astype(int)
-            
-            # Simple color classification
-            colors = []
-            if r > 150 and g < 100 and b < 100:
-                colors.append("red")
-            elif r > 150 and g > 150 and b < 100:
-                colors.append("yellow")
-            elif r < 100 and g > 150 and b < 100:
-                colors.append("green")
-            elif r > 150 and g > 150 and b > 150:
-                colors.append("white")
-            elif r < 100 and g < 100 and b < 100:
-                colors.append("black")
-            elif abs(r - g) < 30 and abs(g - b) < 30:
-                colors.append("neutral")
-            
-            return colors
-            
-        except Exception as e:
-            print(f"Color analysis error: {str(e)}", flush=True)
-            return []
-    
+            error_message = f"Error during image description: {str(e)}"
+            print(error_message, flush=True)
+            print(traceback.format_exc(), flush=True)
+            analysis_result["error"] = error_message
+            return analysis_result # Return error state
+
     def __del__(self):
         """Cleanup resources"""
-        if self.camera:
-            self.camera.release() 
+        if self.camera and self.camera.isOpened():
+            self.camera.release()
+            print("Camera released.", flush=True)
+
+    # Removed OpenCV cascade loading and _analyze_colors method 

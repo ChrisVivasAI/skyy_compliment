@@ -1,131 +1,92 @@
 import random
-from transformers import pipeline
+import ollama
+import traceback
 
 class ComplimentGenerator:
-    def __init__(self, use_transformer=True):
-        self.use_transformer = use_transformer
+    def __init__(self, model_name="gemma3:4b"):
+        """Initializes the ComplimentGenerator using a local Ollama text model."""
+        self.model_name = model_name
+        print(f"ComplimentGenerator initialized to use Ollama model: {self.model_name} for text generation.", flush=True)
+        self.generic_compliments = [
+            "Your dedication is clear, keep up the great work at MDC!",
+            "You bring a positive energy to the campus!",
+            "It's great to see students like you engaged and present!",
+            "Your potential is shining bright!",
+            "Keep pushing forward with your studies, you're doing great!"
+        ]
+
+    def _create_compliment_prompt(self, description):
+        """Creates a prompt for the Ollama text model based on the image description."""
+        # New prompt incorporating description and MDC context
+        prompt = f"""You are Skyy, a friendly AI assistant at Miami Dade College (MDC). Your task is to generate a short, positive, encouraging, and appropriate compliment for an MDC student based *only* on the following visual description obtained from an image.
+
+Visual Description of Student:
+"{description}"
+
+Instructions:
+- Generate a single, kind compliment inspired by the description.
+- Keep it concise (1-2 sentences).
+- Focus on positive attributes like energy, focus, style (respectfully), or perceived effort.
+- Ensure the compliment is appropriate and respectful for a college environment. Avoid overly personal or potentially awkward comments.
+- If the description is vague or unhelpful, provide a general encouraging compliment suitable for an MDC student.
+- Do NOT repeat the description in your compliment.
+
+Appropriate Compliment:"""
+        return prompt
+
+    def generate_compliment(self, analysis_result):
+        """Generate a personalized compliment using the description from the vision module."""
         
-        # Initialize the transformer-based text generation if enabled
-        if use_transformer:
-            try:
-                self.generator = pipeline('text-generation', model='gpt2')
-            except:
-                print("Warning: Transformer model not available. Falling back to rule-based approach.")
-                self.use_transformer = False
+        # Extract description, handle potential errors from vision module
+        description = None
+        if analysis_result and isinstance(analysis_result, dict):
+            if analysis_result.get("error"):
+                 print(f"Vision module reported an error: {analysis_result['error']}. Using generic compliment.", flush=True)
+            else:
+                 description = analysis_result.get("description")
         
-        # Define compliment templates for rule-based generation
-        self.templates = {
-            # Smile-based compliments
-            "smile": [
-                "Your smile lights up the room!",
-                "You have such a warm and inviting smile.",
-                "The way you smile is truly wonderful."
-            ],
-            # Eyes-based compliments
-            "eyes": [
-                "Your eyes have such a captivating spark.",
-                "The kindness in your eyes is inspiring.",
-                "Your eyes reflect such a thoughtful soul."
-            ],
-            # Color-based compliments (for clothing)
-            "colors": {
-                "red": "That shade of red really brings out your confidence!",
-                "blue": "That blue color complements you perfectly.",
-                "green": "That green looks absolutely stunning on you.",
-                "yellow": "That yellow adds such a cheerful vibe to your look!",
-                "purple": "That purple gives you such a regal presence.",
-                "black": "Your style is so elegant and sophisticated.",
-                "white": "You look so fresh and polished!",
-                # Add more colors as needed
-            },
-            # Emotion-based compliments
-            "emotion": {
-                "happy": "Your positivity is contagious!",
-                "neutral": "You have such a composed and confident presence.",
-                "surprise": "Your expressive nature makes conversations with you so engaging!",
-                "sad": "Your thoughtful demeanor shows such emotional depth.",
-                # Add more emotions as needed
-            },
-            # Generic compliments (fallback)
-            "generic": [
-                "You have an amazing presence.",
-                "You seem like someone who really makes a difference.",
-                "You bring such valuable energy to any space you're in.",
-                "Your uniqueness is truly refreshing.",
-                "You have an admirable way of carrying yourself."
-            ]
-        }
-    
-    def generate_compliment(self, visual_features):
-        """Generate a personalized compliment based on visual features"""
-        if not visual_features or "error" in visual_features:
-            # Fallback if vision analysis failed
-            return random.choice(self.templates["generic"])
-        
-        if self.use_transformer:
-            return self._generate_with_transformer(visual_features)
-        else:
-            return self._generate_with_rules(visual_features)
-    
-    def _generate_with_rules(self, features):
-        """Rule-based compliment generation using templates"""
-        compliments = []
-        
-        # Add a smile-based compliment if face was detected
-        if features.get("face_detected", False):
-            compliments.append(random.choice(self.templates["smile"]))
-        
-        # Add a color-based compliment if colors were detected
-        if "colors" in features and features["colors"]:
-            for color in features["colors"]:
-                if color in self.templates["colors"]:
-                    compliments.append(self.templates["colors"][color])
-                    break
-        
-        # Add an emotion-based compliment
-        if "emotion" in features and features["emotion"]:
-            emotion = features["emotion"]
-            if emotion in self.templates["emotion"]:
-                compliments.append(self.templates["emotion"][emotion])
-        
-        # Add eyes compliment
-        compliments.append(random.choice(self.templates["eyes"]))
-        
-        # If no specific compliments were added, use a generic one
-        if not compliments:
-            compliments.append(random.choice(self.templates["generic"]))
-        
-        # Return a randomly selected compliment from the candidate list
-        return random.choice(compliments)
-    
-    def _generate_with_transformer(self, features):
-        """Generate a compliment using a transformer model with visual features as context"""
-        # Create a prompt based on features
-        prompt = "Give a kind compliment to someone who "
-        
-        if features.get("emotion"):
-            prompt += f"appears {features['emotion']}, "
-        
-        if features.get("colors"):
-            color_text = ", ".join(features["colors"])
-            prompt += f"is wearing {color_text}, "
-            
-        # Complete the prompt
-        prompt += "and deserves to feel appreciated:"
-        
-        # Generate text
+        if not description:
+             print("No valid description received from vision module. Using generic compliment.", flush=True)
+             return random.choice(self.generic_compliments)
+
+        # Create the prompt for the text model
+        prompt = self._create_compliment_prompt(description)
+        print(f"Generated Compliment Prompt for Ollama:\n---\n{prompt}\n---", flush=True)
+
         try:
-            result = self.generator(prompt, max_length=50, num_return_sequences=1)
-            generated_text = result[0]['generated_text']
-            
-            # Extract just the compliment part (after the prompt)
-            compliment = generated_text.replace(prompt, "").strip()
-            
-            # If the compliment is empty or too short, fall back to rule-based
-            if len(compliment) < 20:
-                return self._generate_with_rules(features)
+            print(f"Sending request to Ollama text model: {self.model_name}...", flush=True)
+            # Using the same model, but now for text generation based on description
+            response = ollama.chat(
+                model=self.model_name,
+                messages=[{'role': 'user', 'content': prompt}]
+            )
+
+            if response and 'message' in response and 'content' in response['message']:
+                compliment = response['message']['content'].strip()
+                print(f"Received compliment from Ollama: {compliment}", flush=True)
+
+                # Basic safety/quality check
+                if len(compliment) < 5 or "sorry" in compliment.lower() or "cannot" in compliment.lower() or description.lower() in compliment.lower(): # Added check to avoid echoing description
+                     print("Ollama response unsatisfactory or echoed description, falling back to generic compliment.", flush=True)
+                     return random.choice(self.generic_compliments)
+
+                # Clean up potential markdown quotes or prefix
+                compliment = compliment.replace("Appropriate Compliment:", "").replace("*","").replace('"','').strip()
+                # Ensure it ends reasonably (e.g., with punctuation)
+                if compliment and compliment[-1].isalnum():
+                     compliment += "."
                 
-            return compliment
+                # Return the processed compliment if everything is okay
+                return compliment
+            
+            else:
+                 print("Ollama response format invalid (NLP), falling back to generic compliment.", flush=True)
+                 return random.choice(self.generic_compliments)
+
         except Exception as e:
-            print(f"Error in transformer-based generation: {e}")
-            return self._generate_with_rules(features) 
+            print(f"Error during Ollama text generation: {str(e)}", flush=True)
+            print(traceback.format_exc(), flush=True)
+            print("Falling back to generic compliment.", flush=True)
+            return random.choice(self.generic_compliments)
+
+    # Removed _generate_with_rules, _generate_with_transformer, and self.templates 

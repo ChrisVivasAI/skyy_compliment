@@ -6,4 +6,5 @@ transformers==4.28.1
 deepface==0.0.79
 scikit-learn==1.2.2
 pyaudio==0.2.13
-torch==2.0.1 
+torch==2.0.1
+ollama 
