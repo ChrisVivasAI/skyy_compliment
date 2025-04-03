@@ -71,6 +71,7 @@ Skyy is an AI-powered compliment generator designed for Miami Dade College (MDC)
 6.  Grant permission when asked ("yes" or "no").
 7.  Skyy will capture an image, send it to Ollama for description, use that description to ask Ollama for a compliment, and then speak the result.
 
+<<<<<<< HEAD
 ## Project Structure
 
 ```
@@ -86,6 +87,8 @@ skyy_compliment/
 └── README.md              # Project documentation
 ```
 
+=======
+>>>>>>> 78b1f871a4c579f68a6bab315c3359b636a016ac
 ## How It Works
 
 1.  **Speech Recognition**: Listens for the "Skyy, compliment me" trigger.
@@ -119,5 +122,10 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Contact
 
+<<<<<<< HEAD
 - Creator: Chris Vivas & Kevin Zagoya
 - GitHub: [@ChrisVivasAI](https://github.com/ChrisVivasAI)
+=======
+- Creator: Chris Vivas
+- GitHub: [@ChrisVivasAI](https://github.com/ChrisVivasAI)
+>>>>>>> 78b1f871a4c579f68a6bab315c3359b636a016ac
